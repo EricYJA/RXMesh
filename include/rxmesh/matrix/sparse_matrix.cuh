@@ -14,6 +14,8 @@
 #include "cusolverSp_LOWLEVEL_PREVIEW.h"
 #include "rxmesh/matrix/dense_matrix.cuh"
 
+#include "tinymatwriter.h"
+
 namespace rxmesh {
 
 /**
@@ -355,6 +357,73 @@ struct SparseMatrix
             GPU_FREE(m_d_solver_col_idx);
             GPU_FREE(m_d_permute);
             free(m_h_permute);
+        }
+    }
+
+    void writeMAT(std::string filename)
+    {
+        TinyMATWriterFile*    file = TinyMATWriter_open(filename.c_str());
+        std::vector<uint32_t> h_row_ptr(m_row_size + 1);
+        std::vector<uint32_t> h_col_idx(m_nnz);
+        std::vector<T>        h_val(m_nnz);
+        CUDA_ERROR(cudaMemcpy(h_row_ptr.data(),
+                              m_d_row_ptr,
+                              (m_row_size + 1) * sizeof(uint32_t),
+                              cudaMemcpyDeviceToHost));
+        CUDA_ERROR(cudaMemcpy(h_col_idx.data(),
+                              m_d_col_idx,
+                              m_nnz * sizeof(uint32_t),
+                              cudaMemcpyDeviceToHost));
+        CUDA_ERROR(cudaMemcpy(
+            h_val.data(), m_d_val, m_nnz * sizeof(T), cudaMemcpyDeviceToHost));
+        std::vector<double> mat(m_row_size * m_col_size, 0);
+        for (uint32_t r = 0; r < m_row_size; ++r) {
+            for (int i = h_row_ptr[r]; i < h_row_ptr[r + 1]; i++) {
+                uint32_t c              = h_col_idx[i];
+                mat[r * m_row_size + c] = double(h_val[i]);
+            }
+            mat[r * m_row_size + r] = 10.0;
+        }
+        TinyMATWriter_writeMatrix2D_rowmajor(
+            file, "matirxXx", mat.data(), m_row_size, m_row_size);
+        TinyMATWriter_close(file);
+    }
+
+    void writeCOODAT(std::string filename)
+    {
+        std::ofstream         outfile(filename);
+        std::vector<uint32_t> h_row_ptr(m_row_size + 1);
+        std::vector<uint32_t> h_row_idx(m_nnz);
+        std::vector<uint32_t> h_col_idx(m_nnz);
+        std::vector<T>        h_val(m_nnz);
+        CUDA_ERROR(cudaMemcpy(h_row_ptr.data(),
+                              m_d_row_ptr,
+                              (m_row_size + 1) * sizeof(uint32_t),
+                              cudaMemcpyDeviceToHost));
+        CUDA_ERROR(cudaMemcpy(h_col_idx.data(),
+                              m_d_col_idx,
+                              m_nnz * sizeof(uint32_t),
+                              cudaMemcpyDeviceToHost));
+        CUDA_ERROR(cudaMemcpy(
+            h_val.data(), m_d_val, m_nnz * sizeof(T), cudaMemcpyDeviceToHost));
+
+        for (uint32_t r = 0; r < m_row_size; ++r) {
+            for (int i = h_row_ptr[r]; i < h_row_ptr[r + 1]; i++) {
+                h_row_idx[i] = r;
+            }
+        }
+
+        if (outfile.is_open()) {
+            // Write the vector data to the file in three columns, and change the base index to 1
+            for (size_t i = 0; i < h_row_idx.size(); ++i) {
+                outfile << (h_row_idx[i] + 1) << " " << (h_col_idx[i] + 1) << " " << h_val[i]
+                        << std::endl;
+            }
+            // Close the file stream
+            outfile.close();
+            std::cout << "Data saved to " << filename << " successfully." << std::endl;
+        } else {
+            std::cerr << "Failed to open the file." << std::endl;
         }
     }
 

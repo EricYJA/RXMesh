@@ -56,7 +56,7 @@ TEST(App, MCF)
     mcf_rxmesh_cg(rxmesh, ground_truth);  
 
     // RXMesh cusolver Impl
-    mcf_rxmesh_cusolver_chol(rxmesh, ground_truth); 
+    mcf_rxmesh_cusolver_chol(rxmesh, ground_truth, Arg.obj_file_name); 
 }
 
 int main(int argc, char** argv)

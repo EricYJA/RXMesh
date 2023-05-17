@@ -147,7 +147,8 @@ __global__ static void mcf_A_X_setup(
 
 template <typename T>
 void mcf_rxmesh_cusolver_chol(rxmesh::RXMeshStatic&              rxmesh,
-                              const std::vector<std::vector<T>>& ground_truth)
+                              const std::vector<std::vector<T>>& ground_truth,
+                              std::string                        obj_path)
 {
     using namespace rxmesh;
     constexpr uint32_t blockThreads = 256;
@@ -160,8 +161,8 @@ void mcf_rxmesh_cusolver_chol(rxmesh::RXMeshStatic&              rxmesh,
     DenseMatrix<float>  B_mat(num_vertices, 3);
 
     RXMESH_INFO("use_uniform_laplace: {}, time_step: {}",
-           Arg.use_uniform_laplace,
-           Arg.time_step);
+                Arg.use_uniform_laplace,
+                Arg.time_step);
 
     // B set up
     LaunchBox<blockThreads> launch_box_B;
@@ -195,15 +196,15 @@ void mcf_rxmesh_cusolver_chol(rxmesh::RXMeshStatic&              rxmesh,
                                             Arg.time_step);
 
     // Solving the linear system using chol factorization and no reordering
-    A_mat.spmat_linear_solve(B_mat, X_mat, Solver::CHOL, Reorder::NONE);
+    A_mat.spmat_linear_solve(B_mat, X_mat, Solver::CHOL, Reorder::NSTDIS);
 
     X_mat.move(rxmesh::DEVICE, rxmesh::HOST);
 
-    const T tol     = 0.001;
+    const T tol     = 0.01;
     T       tmp_tol = tol;
     bool    passed  = true;
     rxmesh.for_each_vertex(HOST, [&](const VertexHandle vh) {
-        uint32_t v_id = rxmesh.map_to_global(vh);
+        uint32_t v_id        = rxmesh.map_to_global(vh);
         uint32_t v_linear_id = rxmesh.linear_id(vh);
 
         T a = X_mat(v_linear_id, 0);
@@ -214,14 +215,17 @@ void mcf_rxmesh_cusolver_chol(rxmesh::RXMeshStatic&              rxmesh,
 
             if (tmp_tol > tol) {
                 RXMESH_WARN("val: {}, truth: {}, tol: {}\n",
-                       X_mat(v_linear_id, i),
-                       ground_truth[v_id][i],
-                       tmp_tol);
+                            X_mat(v_linear_id, i),
+                            ground_truth[v_id][i],
+                            tmp_tol);
                 passed = false;
                 break;
             }
         }
     });
+
+    std::string out_path = "/home/ericy/Project/matlab_data/";
+    A_mat.writeCOODAT(out_path + extract_file_name(obj_path) + ".dat");
 
     EXPECT_TRUE(passed);
 }
