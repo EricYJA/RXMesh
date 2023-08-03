@@ -389,6 +389,35 @@ struct SparseMatrix
         TinyMATWriter_close(file);
     }
 
+    void writePatchMapArray(rxmesh::RXMeshStatic& rxmesh, std::string filename)
+    {
+        std::ofstream         outfile(filename);
+        std::vector<uint32_t> h_row_map(m_row_size);
+
+        rxmesh.for_each_vertex(HOST, [&](const VertexHandle vh) {
+            // uint32_t v_id        = rxmesh.map_to_global(vh); // original ID
+            // from the mesh
+            uint32_t v_linear_id =
+                rxmesh.linear_id(vh);  // RXMesh assigned ID for sparse matrix
+
+            h_row_map[v_linear_id] = vh.unpack().first;
+        });
+
+        if (outfile.is_open()) {
+            //write the array in column
+            for (size_t i = 0; i < h_row_map.size(); ++i) {
+                outfile << (h_row_map[i]) << std::endl;
+            }
+            
+            // Close the file stream
+            outfile.close();
+            std::cout << "Data saved to " << filename << " successfully."
+                      << std::endl;
+        } else {
+            std::cerr << "Failed to open the file." << std::endl;
+        }
+    }
+
     void writeCOODAT(std::string filename)
     {
         std::ofstream         outfile(filename);
@@ -414,14 +443,16 @@ struct SparseMatrix
         }
 
         if (outfile.is_open()) {
-            // Write the vector data to the file in three columns, and change the base index to 1
+            // Write the vector data to the file in three columns, and change
+            // the base index to 1
             for (size_t i = 0; i < h_row_idx.size(); ++i) {
-                outfile << (h_row_idx[i] + 1) << " " << (h_col_idx[i] + 1) << " " << h_val[i]
-                        << std::endl;
+                outfile << (h_row_idx[i] + 1) << " " << (h_col_idx[i] + 1)
+                        << " " << h_val[i] << std::endl;
             }
             // Close the file stream
             outfile.close();
-            std::cout << "Data saved to " << filename << " successfully." << std::endl;
+            std::cout << "Data saved to " << filename << " successfully."
+                      << std::endl;
         } else {
             std::cerr << "Failed to open the file." << std::endl;
         }

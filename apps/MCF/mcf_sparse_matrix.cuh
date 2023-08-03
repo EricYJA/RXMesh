@@ -226,6 +226,7 @@ void mcf_rxmesh_cusolver_chol(rxmesh::RXMeshStatic&              rxmesh,
 
     std::string out_path = "/home/ericy/Project/matlab_data/";
     A_mat.writeCOODAT(out_path + extract_file_name(obj_path) + ".dat");
+    A_mat.writePatchMapArray(rxmesh, out_path + extract_file_name(obj_path) + "_map.dat");
 
     EXPECT_TRUE(passed);
 }
