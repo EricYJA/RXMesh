@@ -95,9 +95,9 @@ __global__ static void sparse_mat_col_fill(const rxmesh::Context context,
         col_idx[row_ptr[context.m_vertex_prefix[patch_id] + local_id]] =
             context.m_vertex_prefix[patch_id] + local_id;
         for (uint32_t v = 0; v < iter.size(); ++v) {
-            auto     s_ids      = iter[v].unpack();
-            uint32_t s_patch_id = s_ids.first;
-            uint16_t s_local_id = s_ids.second;
+            auto     n_ids      = iter[v].unpack();
+            uint32_t n_patch_id = n_ids.first;
+            uint16_t n_local_id = n_ids.second;
             col_idx[row_ptr[context.m_vertex_prefix[patch_id] + local_id] + v +
                     1] = context.m_vertex_prefix[s_patch_id] + s_local_id;
         }
@@ -109,8 +109,41 @@ __global__ static void sparse_mat_col_fill(const rxmesh::Context context,
     query.dispatch<Op::VV>(block, shrd_alloc, col_fillin);
 }
 
+template <uint32_t blockThreads, typename IndexT = int>
+__global__ static void get_spv_mapping(const rxmesh::Context context,
+                                       IndexT*               spv_arr)
+{
+    using namespace rxmesh;
+
+    auto init_lambda = [&](rxmesh::RXMeshStatic& rxmesh, VertexHandle& v_id, const FaceIterator& iter) {
+        auto     ids                                          = v_id.unpack();
+        uint32_t patch_id                                     = ids.first;
+        uint16_t local_id                                     = ids.second;
+        
+        bool is_spv = false;
+
+        auto     init_f_ids      = iter[0].unpack();
+        uint32_t tmp_patch_id = init_f_ids.first;
+
+        for (uint32_t f = 1; f < iter.size(); ++f) {
+            auto     f_ids      = iter[f].unpack();
+            uint32_t f_patch_id = f_ids.first;
+            is_spv = is_spv || (tmp_patch_id != f_patch_id);
+            tmp_patch_id = f_patch_id;
+        }
+
+        spv_arr[rxmesh.linear_id(vh)] = is_spv ? 1 : 0;
+        
+    };
+
+    auto                block = cooperative_groups::this_thread_block();
+    Query<blockThreads> query(context);
+    ShmemAllocator      shrd_alloc;
+    query.dispatch<Op::VF>(block, shrd_alloc, init_lambda);
+}
+
 // d_out[d_p[i]] = d_in[i]
-template <typename T, typename IndexT = int>
+template <typename T, typename IndexT = int> 
 void permute_scatter(IndexT* d_p, T* d_in, T* d_out, IndexT size)
 {
     thrust::device_ptr<IndexT> t_p(d_p);
@@ -404,11 +437,11 @@ struct SparseMatrix
         });
 
         if (outfile.is_open()) {
-            //write the array in column
+            // write the array in column
             for (size_t i = 0; i < h_row_map.size(); ++i) {
                 outfile << (h_row_map[i]) << std::endl;
             }
-            
+
             // Close the file stream
             outfile.close();
             std::cout << "Data saved to " << filename << " successfully."
