@@ -498,11 +498,10 @@ struct SparseMatrix
 
     void writeCUDAPermArray(std::string filename) {
         std::ofstream       outfile(filename);
-        m_h_permute
 
         if (outfile.is_open()) {
             for (size_t i = 0; i < m_row_size; ++i) {
-                outfile << (h_spv_arr[i]) << std::endl;
+                outfile << (m_h_permute[i]) << std::endl;
             }
             
             // Close the file stream
