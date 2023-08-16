@@ -496,7 +496,25 @@ struct SparseMatrix
         }
     }
 
-    void writeCOODAT(std::string filename)
+    void writeCUDAPermArray(std::string filename) {
+        std::ofstream       outfile(filename);
+        m_h_permute
+
+        if (outfile.is_open()) {
+            for (size_t i = 0; i < m_row_size; ++i) {
+                outfile << (h_spv_arr[i]) << std::endl;
+            }
+            
+            // Close the file stream
+            outfile.close();
+            std::cout << "Data saved to " << filename << " successfully."
+                      << std::endl;
+        } else {
+            std::cerr << "Failed to open the file." << std::endl;
+        }
+    }
+
+    void writeMATCOODAT(std::string filename)
     {
         std::ofstream       outfile(filename);
         std::vector<IndexT> h_row_ptr(m_row_size + 1);
