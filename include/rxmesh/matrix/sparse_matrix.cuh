@@ -99,7 +99,7 @@ __global__ static void sparse_mat_col_fill(const rxmesh::Context context,
             uint32_t n_patch_id = n_ids.first;
             uint16_t n_local_id = n_ids.second;
             col_idx[row_ptr[context.m_vertex_prefix[patch_id] + local_id] + v +
-                    1] = context.m_vertex_prefix[s_patch_id] + s_local_id;
+                    1] = context.m_vertex_prefix[n_patch_id] + n_local_id;
         }
     };
 
@@ -111,29 +111,31 @@ __global__ static void sparse_mat_col_fill(const rxmesh::Context context,
 
 template <uint32_t blockThreads, typename IndexT = int>
 __global__ static void get_spv_mapping(const rxmesh::Context context,
-                                       IndexT*               spv_arr)
+                                       IndexT*               d_spv_arr)
 {
     using namespace rxmesh;
 
-    auto init_lambda = [&](rxmesh::RXMeshStatic& rxmesh, VertexHandle& v_id, const FaceIterator& iter) {
-        auto     ids                                          = v_id.unpack();
-        uint32_t patch_id                                     = ids.first;
-        uint16_t local_id                                     = ids.second;
-        
+    auto init_lambda = [&](VertexHandle&         v_id,
+                           const FaceIterator&   iter) {
+        auto     ids      = v_id.unpack();
+        uint32_t patch_id = ids.first;
+        uint16_t local_id = ids.second;
+
         bool is_spv = false;
 
-        auto     init_f_ids      = iter[0].unpack();
+        auto     init_f_ids   = iter[0].unpack();
         uint32_t tmp_patch_id = init_f_ids.first;
 
         for (uint32_t f = 1; f < iter.size(); ++f) {
             auto     f_ids      = iter[f].unpack();
             uint32_t f_patch_id = f_ids.first;
-            is_spv = is_spv || (tmp_patch_id != f_patch_id);
-            tmp_patch_id = f_patch_id;
+            is_spv              = is_spv || (tmp_patch_id != f_patch_id);
+            tmp_patch_id        = f_patch_id;
         }
 
-        spv_arr[rxmesh.linear_id(vh)] = is_spv ? 1 : 0;
-        
+        IndexT device_linear_id = context.m_vertex_prefix[patch_id] + local_id;
+
+        d_spv_arr[device_linear_id] = is_spv ? 1 : 0;
     };
 
     auto                block = cooperative_groups::this_thread_block();
@@ -143,7 +145,7 @@ __global__ static void get_spv_mapping(const rxmesh::Context context,
 }
 
 // d_out[d_p[i]] = d_in[i]
-template <typename T, typename IndexT = int> 
+template <typename T, typename IndexT = int>
 void permute_scatter(IndexT* d_p, T* d_in, T* d_out, IndexT size)
 {
     thrust::device_ptr<IndexT> t_p(d_p);
@@ -395,24 +397,24 @@ struct SparseMatrix
 
     void writeMAT(std::string filename)
     {
-        TinyMATWriterFile*    file = TinyMATWriter_open(filename.c_str());
-        std::vector<uint32_t> h_row_ptr(m_row_size + 1);
-        std::vector<uint32_t> h_col_idx(m_nnz);
-        std::vector<T>        h_val(m_nnz);
+        TinyMATWriterFile*  file = TinyMATWriter_open(filename.c_str());
+        std::vector<IndexT> h_row_ptr(m_row_size + 1);
+        std::vector<IndexT> h_col_idx(m_nnz);
+        std::vector<T>      h_val(m_nnz);
         CUDA_ERROR(cudaMemcpy(h_row_ptr.data(),
                               m_d_row_ptr,
-                              (m_row_size + 1) * sizeof(uint32_t),
+                              (m_row_size + 1) * sizeof(IndexT),
                               cudaMemcpyDeviceToHost));
         CUDA_ERROR(cudaMemcpy(h_col_idx.data(),
                               m_d_col_idx,
-                              m_nnz * sizeof(uint32_t),
+                              m_nnz * sizeof(IndexT),
                               cudaMemcpyDeviceToHost));
         CUDA_ERROR(cudaMemcpy(
             h_val.data(), m_d_val, m_nnz * sizeof(T), cudaMemcpyDeviceToHost));
         std::vector<double> mat(m_row_size * m_col_size, 0);
-        for (uint32_t r = 0; r < m_row_size; ++r) {
+        for (IndexT r = 0; r < m_row_size; ++r) {
             for (int i = h_row_ptr[r]; i < h_row_ptr[r + 1]; i++) {
-                uint32_t c              = h_col_idx[i];
+                IndexT c                = h_col_idx[i];
                 mat[r * m_row_size + c] = double(h_val[i]);
             }
             mat[r * m_row_size + r] = 10.0;
@@ -424,8 +426,8 @@ struct SparseMatrix
 
     void writePatchMapArray(rxmesh::RXMeshStatic& rxmesh, std::string filename)
     {
-        std::ofstream         outfile(filename);
-        std::vector<uint32_t> h_row_map(m_row_size);
+        std::ofstream       outfile(filename);
+        std::vector<IndexT> h_row_map(m_row_size);
 
         rxmesh.for_each_vertex(HOST, [&](const VertexHandle vh) {
             // uint32_t v_id        = rxmesh.map_to_global(vh); // original ID
@@ -451,25 +453,68 @@ struct SparseMatrix
         }
     }
 
+    void writeSpvArray(rxmesh::RXMeshStatic& rx, std::string filename)
+    {
+        IndexT             num_vertices = rx.get_num_vertices();
+        constexpr uint32_t blockThreads = 256;
+
+        std::ofstream       outfile(filename);
+        std::vector<IndexT> h_spv_arr(m_row_size);
+
+        IndexT* d_spv_arr;
+        CUDA_ERROR(
+            cudaMalloc((void**)&d_spv_arr, (num_vertices) * sizeof(IndexT)));
+
+        LaunchBox<blockThreads> launch_box;
+        rx.prepare_launch_box(
+            {Op::VF}, launch_box, (void*)detail::get_spv_mapping<blockThreads>);
+
+        detail::get_spv_mapping<blockThreads>
+            <<<launch_box.blocks,
+               launch_box.num_threads,
+               launch_box.smem_bytes_dyn>>>(m_context, d_spv_arr);
+
+        CUDA_ERROR(cudaMemcpy(h_spv_arr.data(),
+                              d_spv_arr,
+                              (num_vertices) * sizeof(IndexT),
+                              cudaMemcpyDeviceToHost));
+
+        int count = std::count(h_spv_arr.begin(), h_spv_arr.end(), 1);
+        printf("COUNT: %d TOTAL: %d \n", count, num_vertices);
+
+        if (outfile.is_open()) {
+            for (size_t i = 0; i < h_spv_arr.size(); ++i) {
+                outfile << (h_spv_arr[i]) << std::endl;
+            }
+            
+            // Close the file stream
+            outfile.close();
+            std::cout << "Data saved to " << filename << " successfully."
+                      << std::endl;
+        } else {
+            std::cerr << "Failed to open the file." << std::endl;
+        }
+    }
+
     void writeCOODAT(std::string filename)
     {
-        std::ofstream         outfile(filename);
-        std::vector<uint32_t> h_row_ptr(m_row_size + 1);
-        std::vector<uint32_t> h_row_idx(m_nnz);
-        std::vector<uint32_t> h_col_idx(m_nnz);
-        std::vector<T>        h_val(m_nnz);
+        std::ofstream       outfile(filename);
+        std::vector<IndexT> h_row_ptr(m_row_size + 1);
+        std::vector<IndexT> h_row_idx(m_nnz);
+        std::vector<IndexT> h_col_idx(m_nnz);
+        std::vector<T>      h_val(m_nnz);
         CUDA_ERROR(cudaMemcpy(h_row_ptr.data(),
                               m_d_row_ptr,
-                              (m_row_size + 1) * sizeof(uint32_t),
+                              (m_row_size + 1) * sizeof(IndexT),
                               cudaMemcpyDeviceToHost));
         CUDA_ERROR(cudaMemcpy(h_col_idx.data(),
                               m_d_col_idx,
-                              m_nnz * sizeof(uint32_t),
+                              m_nnz * sizeof(IndexT),
                               cudaMemcpyDeviceToHost));
         CUDA_ERROR(cudaMemcpy(
             h_val.data(), m_d_val, m_nnz * sizeof(T), cudaMemcpyDeviceToHost));
 
-        for (uint32_t r = 0; r < m_row_size; ++r) {
+        for (IndexT r = 0; r < m_row_size; ++r) {
             for (int i = h_row_ptr[r]; i < h_row_ptr[r + 1]; i++) {
                 h_row_idx[i] = r;
             }
