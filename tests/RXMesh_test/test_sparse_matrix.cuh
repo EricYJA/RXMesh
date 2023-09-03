@@ -376,6 +376,12 @@ TEST(RXMeshStatic, SparseMatrixLowerLevelAPISolve)
     A_mat.spmat_chol_buffer_alloc();
     A_mat.spmat_chol_factor();
 
+    std::string out_path = "/home/ericycc/Matlab_data/";
+    A_mat.writeSpvArray(rxmesh, out_path + extract_file_name(obj_path) + "_spv.dat");
+    A_mat.writeCUDAPermArray(out_path + extract_file_name(obj_path) + "_perm.dat");
+    A_mat.writePatchMapArray(rxmesh, out_path + extract_file_name(obj_path) + "_map.dat");
+    A_mat.writeMATCOODAT(out_path + extract_file_name(obj_path) + ".dat");
+
     for (int i = 0; i < B_mat.m_col_size; ++i) {
         A_mat.spmat_chol_solve(B_mat.col_data(i), X_mat.col_data(i));
     }

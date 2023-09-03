@@ -192,7 +192,8 @@ struct SparseMatrix
           m_spmm_buffer_size(0),
           m_spmv_buffer_size(0),
           m_use_reorder(false),
-          m_allocated(LOCATION_NONE)
+          m_allocated(LOCATION_NONE),
+          m_reorder_allocated(false)
     {
         using namespace rxmesh;
         constexpr uint32_t blockThreads = 256;

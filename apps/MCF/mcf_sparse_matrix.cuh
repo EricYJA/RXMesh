@@ -224,7 +224,8 @@ void mcf_rxmesh_cusolver_chol(rxmesh::RXMeshStatic&              rxmesh,
         }
     });
 
-    std::string out_path = "/home/ericycc/Matlab_data/";
+    std::string out_path = "/home/ericycc/Matlab_data/mcf_";
+    A_mat.spmat_chol_reorder(Reorder::NSTDIS);
     A_mat.writeSpvArray(rxmesh, out_path + extract_file_name(obj_path) + "_spv.dat");
     A_mat.writeCUDAPermArray(out_path + extract_file_name(obj_path) + "_perm.dat");
     A_mat.writePatchMapArray(rxmesh, out_path + extract_file_name(obj_path) + "_map.dat");
