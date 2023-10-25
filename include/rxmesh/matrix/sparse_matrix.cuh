@@ -115,8 +115,7 @@ __global__ static void get_spv_mapping(const rxmesh::Context context,
 {
     using namespace rxmesh;
 
-    auto init_lambda = [&](VertexHandle&         v_id,
-                           const FaceIterator&   iter) {
+    auto init_lambda = [&](VertexHandle& v_id, const FaceIterator& iter) {
         auto     ids      = v_id.unpack();
         uint32_t patch_id = ids.first;
         uint16_t local_id = ids.second;
@@ -142,6 +141,52 @@ __global__ static void get_spv_mapping(const rxmesh::Context context,
     Query<blockThreads> query(context);
     ShmemAllocator      shrd_alloc;
     query.dispatch<Op::VF>(block, shrd_alloc, init_lambda);
+}
+
+template <uint32_t blockThreads, typename IndexT = int>
+__global__ static void get_spv_vv_mapping(const rxmesh::Context context,
+                                          IndexT*               d_spv_arr)
+{
+    using namespace rxmesh;
+
+    auto init_lambda = [&](VertexHandle& v_id, const VertexIterator& iter) {
+        auto     ids      = v_id.unpack();
+        uint32_t patch_id = ids.first;
+        uint16_t local_id = ids.second;
+
+        IndexT device_linear_id = context.m_vertex_prefix[patch_id] + local_id;
+
+        bool     is_spv       = false;
+        uint32_t pri_patch_id = patch_id;
+
+        for (uint32_t v = 1; v < iter.size(); ++v) {
+            auto     v_ids      = iter[v].unpack();
+            uint32_t v_patch_id = v_ids.first;
+
+            if (device_linear_id == 201) {
+                printf("%d, %d, %d\n", is_spv, v_patch_id, patch_id);
+            }
+
+            pri_patch_id =
+                v_patch_id < pri_patch_id ? v_patch_id : pri_patch_id;
+            is_spv = is_spv || (patch_id != v_patch_id);
+        }
+
+        if (is_spv && pri_patch_id == patch_id) {
+            d_spv_arr[device_linear_id] = 1;
+        } else {
+            d_spv_arr[device_linear_id] = 0;
+        }
+
+        if (device_linear_id == 201) {
+            printf("%d, %d\n", is_spv, d_spv_arr[device_linear_id]);
+        }
+    };
+
+    auto                block = cooperative_groups::this_thread_block();
+    Query<blockThreads> query(context);
+    ShmemAllocator      shrd_alloc;
+    query.dispatch<Op::VV>(block, shrd_alloc, init_lambda);
 }
 
 // d_out[d_p[i]] = d_in[i]
@@ -467,10 +512,11 @@ struct SparseMatrix
             cudaMalloc((void**)&d_spv_arr, (num_vertices) * sizeof(IndexT)));
 
         LaunchBox<blockThreads> launch_box;
-        rx.prepare_launch_box(
-            {Op::VF}, launch_box, (void*)detail::get_spv_mapping<blockThreads>);
+        rx.prepare_launch_box({Op::VV},
+                              launch_box,
+                              (void*)detail::get_spv_vv_mapping<blockThreads>);
 
-        detail::get_spv_mapping<blockThreads>
+        detail::get_spv_vv_mapping<blockThreads>
             <<<launch_box.blocks,
                launch_box.num_threads,
                launch_box.smem_bytes_dyn>>>(m_context, d_spv_arr);
@@ -487,7 +533,7 @@ struct SparseMatrix
             for (size_t i = 0; i < h_spv_arr.size(); ++i) {
                 outfile << (h_spv_arr[i]) << std::endl;
             }
-            
+
             // Close the file stream
             outfile.close();
             std::cout << "Data saved to " << filename << " successfully."
@@ -497,14 +543,15 @@ struct SparseMatrix
         }
     }
 
-    void writeCUDAPermArray(std::string filename) {
-        std::ofstream       outfile(filename);
+    void writeCUDAPermArray(std::string filename)
+    {
+        std::ofstream outfile(filename);
 
         if (outfile.is_open()) {
             for (size_t i = 0; i < m_row_size; ++i) {
                 outfile << (m_h_permute[i]) << std::endl;
             }
-            
+
             // Close the file stream
             outfile.close();
             std::cout << "Data saved to " << filename << " successfully."

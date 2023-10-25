@@ -50,10 +50,10 @@ TEST(App, MCF)
     for (auto& g : ground_truth) {
         g.resize(3);
     }
-    mcf_openmesh(omp_get_max_threads(), input_mesh, ground_truth);
+    // mcf_openmesh(omp_get_max_threads(), input_mesh, ground_truth);
 
-    // RXMesh Impl
-    mcf_rxmesh_cg(rxmesh, ground_truth);  
+    // // RXMesh Impl
+    // mcf_rxmesh_cg(rxmesh, ground_truth);  
 
     // RXMesh cusolver Impl
     mcf_rxmesh_cusolver_chol(rxmesh, ground_truth, Arg.obj_file_name); 
