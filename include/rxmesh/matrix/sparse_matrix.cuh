@@ -780,6 +780,8 @@ struct SparseMatrix
                                                     m_h_solver_col_idx,
                                                     m_h_permute));
         } else if (reorder == PermuteMethod::NSTDIS) {
+            CPUTimer timer;
+            timer.start();
             CUSOLVER_ERROR(cusolverSpXcsrmetisndHost(m_cusolver_sphandle,
                                                      m_num_rows,
                                                      m_nnz,
@@ -788,6 +790,11 @@ struct SparseMatrix
                                                      m_h_solver_col_idx,
                                                      NULL,
                                                      m_h_permute));
+            timer.stop();
+            RXMESH_INFO("SparseMatrix::permute() CPU Nested Dissection reordering "
+                        "time: {} ms",
+                        timer.elapsed_millis());
+                                
         } else if (reorder == PermuteMethod::CUSTOM) {
             if (h_costom_reordering == nullptr) {
                 RXMESH_ERROR(
@@ -848,6 +855,9 @@ struct SparseMatrix
                                               m_h_permute_map,
                                               perm_buffer_cpu));
 
+        GPUTimer timer;
+
+        timer.start();
         // copy the permute csr from the device
         CUDA_ERROR(cudaMemcpyAsync(m_d_solver_row_ptr,
                                    m_h_solver_row_ptr,
@@ -864,7 +874,9 @@ struct SparseMatrix
                                    m_nnz * sizeof(IndexT),
                                    cudaMemcpyHostToDevice));
         permute_gather(m_d_permute_map, m_d_val, m_d_solver_val, m_nnz);
-
+        timer.stop();
+        RXMESH_INFO("SparseMatrix::permute() Memory copy time: {} ms",
+                    timer.elapsed_millis());
 
         free(perm_buffer_cpu);
     }
@@ -973,6 +985,11 @@ struct SparseMatrix
                                                  &m_internalDataInBytes,
                                                  &m_workspaceInBytes));
             }
+
+            RXMESH_INFO("SparseMatrix::post_analyze_alloc() chol internal data "
+                        "size: {} bytes, workspace size: {} bytes",
+                        m_internalDataInBytes,
+                        m_workspaceInBytes);
         } else if (solver == Solver::QR) {
             if constexpr (std::is_same_v<T, float>) {
                 float mu = 0.f;
@@ -1266,11 +1283,28 @@ struct SparseMatrix
         }
         m_current_solver = solver;
 
+        GPUTimer timer;
+
         permute_alloc(reorder);
         permute(reorder, h_costom_reordering);
+
+        timer.start();
         analyze_pattern(solver);
+        timer.stop();
+        RXMESH_INFO("SparseMatrix::pre_solve() analyze_pattern time: {} ms",
+                    timer.elapsed_millis());
+        
+        timer.start();
         post_analyze_alloc(solver);
+        timer.stop();
+        RXMESH_INFO("SparseMatrix::pre_solve() post_analyze_alloc time: {} ms",
+                    timer.elapsed_millis());
+
+        timer.start();
         factorize(solver);
+        timer.stop();
+        RXMESH_INFO("SparseMatrix::pre_solve() factorize time: {} ms",
+                    timer.elapsed_millis());
     }
 
     /**

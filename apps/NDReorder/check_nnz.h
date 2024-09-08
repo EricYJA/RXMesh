@@ -4,8 +4,6 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
-#include "rxmesh/util/timer.h"
-#include "rxmesh/util/log.h"
 
 using namespace Eigen;
 
@@ -129,8 +127,6 @@ void printNonZerosRatio(const SparseMatrix<float>& original_matrix,
     // printf("NNZ ratio for %s: %f\n",
     //        name.c_str(),
     //        float(nnz_factorized) / float(nnz_original));
-    RXMESH_INFO("NNZ ratio for {}: {}", name.c_str(),
-           float(nnz_factorized) / float(nnz_original));
 }
 
 
@@ -196,17 +192,12 @@ void processmesh_metis(const std::string& inputfile)
 
     idx_t ncon = 1;  // Number of balancing constraints
 
-    rxmesh::CPUTimer timer;
-    timer.start();
 
     //TODO adjncy is empty
     METIS_NodeND(&n, &xadj[0], &adjncy[0], NULL, options, &perm[0], &iperm[0]);
 
-    timer.stop();
-    float total_time = timer.elapsed_millis();
 
     // printf("METIS reordering time: %f ms\n", total_time);
-    RXMESH_INFO("METIS reordering time: {} ms", total_time);
 
     // Apply permutation to the sparse matrix (P * A * P^T)
     Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic, idx_t> permMatrix(
@@ -269,16 +260,9 @@ void processmesh_parmetis(const std::string& inputfile)
 
     idx_t ncon = 1;  // Number of balancing constraints
 
-    rxmesh::CPUTimer timer;
-    timer.start();
-
     METIS_NodeND(&n, &xadj[0], &adjncy[0], NULL, options, &perm[0], &iperm[0]);
 
-    timer.stop();
-    float total_time = timer.elapsed_millis();
-
     // printf("parMETIS reordering time: %f ms\n", total_time);
-    RXMESH_INFO("parMETIS reordering time: {} ms", total_time);
 
     // Apply permutation to the sparse matrix (P * A * P^T)
     Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic, idx_t> permMatrix(
@@ -356,12 +340,11 @@ void reorder_array_correctness_check(uint32_t*      reorder_array,
     for (int i = 0; i < num_vertices; i++) {
         // printf("reorder_array[%d] = %d\n", i, reorder_array[i]);
         if (reorder_array_copy[i] != i) {
-            RXMESH_ERROR("reorder_array[{}] = {}", i, reorder_array_copy[i]);
             assert(false && "reorder_array is not correct");
             return;
         }
     }
-    RXMESH_INFO("reorder_array is correct");
+    printf("reorder_array is correct\n");
 }
 
 

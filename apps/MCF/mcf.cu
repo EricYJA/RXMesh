@@ -21,7 +21,7 @@ struct arg
     float       cg_tolerance        = 1e-6;
     uint32_t    max_num_cg_iter     = 1000;
     bool        use_uniform_laplace = false;
-    uint32_t    nd_level            = 1;
+    uint32_t    nd_level            = 4;
     char**      argv;
     int         argc;
 } Arg;
@@ -43,11 +43,11 @@ TEST(App, MCF)
     // RXMesh Impl
     mcf_cg<dataT>(rx);
 
-    // RXMesh cusolver Impl
-    mcf_cusolver_chol<dataT>(rx);
-
     // RXMesh cusolver Impl with our CUDA_ND reorder
     mcf_cusolver_chol_cudaND<dataT>(rx);
+
+    // RXMesh cusolver Impl
+    mcf_cusolver_chol<dataT>(rx);
 }
 
 int main(int argc, char** argv)

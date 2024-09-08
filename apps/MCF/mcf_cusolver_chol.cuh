@@ -283,7 +283,13 @@ void mcf_cusolver_chol_cudaND(rxmesh::RXMeshStatic& rx)
                                  sizeof(uint32_t) * rx.get_num_vertices()));
     CUDA_ERROR(cudaMemset(h_reorder_array, 0, sizeof(uint32_t) * rx.get_num_vertices()));
 
+
+    GPU_timer timer;
+    timer.start();
     cuda_nd_reorder(rx, h_reorder_array, Arg.nd_level);
+    timer.stop();
+    RXMESH_INFO("CUDA_ND reorder time: {}", timer.elapsed_time());
+
     if (arr_check_uint32_to_int_cast(h_reorder_array, rx.get_num_vertices())) {
         h_reorder_array_int_cpy = reinterpret_cast<int*>(h_reorder_array);
     } else {
