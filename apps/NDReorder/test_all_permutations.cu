@@ -15,6 +15,24 @@
 
 #include "metis.h"
 
+
+// ---------- TODO ------------
+/**
+ * 1. use the grid input
+ * 2. Use the grid partition in the patcher.cu
+ * 3. Try to get the ground truth from the patcher
+ */
+// std::vector<std::vector<float>> verts;
+// std::vector<std::vector<uint32_t>> fv;
+// uint32_t nx = 50;
+// uint32_t ny = 50;
+// create_plane(verts, fv, nx, ny);
+// RXMeshStatic rx(fv);
+// rx.add_vertex_coordinates(verts, "plane");
+ 
+//  RXMeshStatic rx(fv, "patches_file");
+
+
 struct arg
 {
     std::string obj_file_name = STRINGIFY(INPUT_DIR) "cloth_uni_loop.obj";
