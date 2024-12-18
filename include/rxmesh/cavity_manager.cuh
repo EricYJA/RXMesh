@@ -29,7 +29,6 @@ struct CavityManager
           m_s_q_correspondence_vf(nullptr),
           m_correspondence_size_e(0),
           m_correspondence_size_vf(0),
-          m_s_readd_to_queue(nullptr),
           m_s_ev(nullptr),
           m_s_fe(nullptr),
           m_s_cavity_id_v(nullptr),
@@ -429,7 +428,7 @@ struct CavityManager
      * @brief construct the cavities boundary loop for all cavities created in
      * this patch
      */
-    template <uint32_t itemPerThread = 5>
+    template <int itemPerThread = 5>
     __device__ __inline__ void construct_cavities_edge_loop(
         cooperative_groups::thread_block& block);
 
@@ -585,6 +584,14 @@ struct CavityManager
                                               const uint16_t q_face,
                                               PatchInfo&     q_patch_info,
                                               FuncT          should_migrate);
+    /**
+     * @brief Add a new patch to the patch stash and return the stash id
+     * Internally, if the patch is actually new (i.e., it was not stored in
+     * the patch stash before), we also indicate that we have added a new patch
+     * (using m_s_new_patch_added)
+     */
+    __device__ __inline__ uint8_t add_new_patch_to_patch_stash(
+        const uint32_t new_patch);
 
     /**
      * @brief given a local vertex in a patch, find its corresponding local
@@ -673,8 +680,23 @@ struct CavityManager
     __device__ __inline__ bool lock_patches_to_lock(
         cooperative_groups::thread_block& block);
 
+
     /**
-     * @brief prepare m_s_ribbonize_v with vertices that need to be ribbonize
+     * @brief lock new patches added to the patch stash
+     */
+    __device__ __inline__ bool lock_new_added_patches(
+        cooperative_groups::thread_block& block);
+
+
+    /**
+     * @brief lock neighbour patches
+     */
+    __device__ __inline__ bool lock_neighbour_patches(
+        cooperative_groups::thread_block& block);
+
+    /**
+     * @brief prepare m_s_ribbonize_v with vertices that need to be
+     * ribbonize
      */
     __device__ __inline__ void pre_ribbonize(
         cooperative_groups::thread_block& block);
@@ -698,6 +720,12 @@ struct CavityManager
         const LPPair*                     s_table,
         const LPPair*                     s_stash);
 
+
+    /**
+     * @brief return false if one of the locked patches are dirty
+     */
+    __device__ __inline__ bool ensure_locked_patches_are_not_dirty();
+
     /**
      * @brief give a patch q, we store the corresponding element in p in
      * s_correspondence. Thus, s_correspondence is indexed via q's index space
@@ -705,6 +733,7 @@ struct CavityManager
     template <typename HandleT>
     __device__ __inline__ void populate_correspondence(
         cooperative_groups::thread_block& block,
+        const PatchInfo&                  q_patch_info,
         const uint8_t                     q_stash,
         uint16_t*                         s_correspondence,
         uint8_t*                          s_correspondence_stash,
@@ -757,6 +786,134 @@ struct CavityManager
      */
     __device__ __inline__ void recover_faces_through_edges();
 
+    /**
+     * @brief return the shared-memory not-owned hash table and hash table stash
+     * associated to specific type.
+     */
+    template <typename HandleT>
+    __device__ __inline__ std::pair<LPPair*, LPPair*> get_s_table()
+    {
+        if constexpr (std::is_same_v<HandleT, VertexHandle>) {
+            return std::pair<LPPair*, LPPair*>(m_s_table_v, m_s_table_stash_v);
+        }
+
+        if constexpr (std::is_same_v<HandleT, EdgeHandle>) {
+            return std::pair<LPPair*, LPPair*>(m_s_table_e, m_s_table_stash_e);
+        }
+
+        if constexpr (std::is_same_v<HandleT, FaceHandle>) {
+            return std::pair<LPPair*, LPPair*>(m_s_table_f, m_s_table_stash_f);
+        }
+    }
+
+    /**
+     * @brief return the number of elements as stored in shared memory based on
+     * template parameter
+     */
+    template <typename HandleT>
+    __device__ __inline__ uint32_t get_num_elements()
+    {
+
+        if constexpr (std::is_same_v<HandleT, VertexHandle>) {
+            return m_s_num_vertices[0];
+        }
+
+        if constexpr (std::is_same_v<HandleT, EdgeHandle>) {
+            return m_s_num_edges[0];
+        }
+
+        if constexpr (std::is_same_v<HandleT, FaceHandle>) {
+            return m_s_num_faces[0];
+        }
+    }
+
+
+    /**
+     * @brief check if an element owned from information stored in shared memory
+     * based on template parameter
+     */
+    template <typename HandleT>
+    __device__ __inline__ bool is_owned(uint16_t b)
+    {
+        if constexpr (std::is_same_v<HandleT, VertexHandle>) {
+            assert(b < m_s_owned_mask_v.size());
+            return m_s_owned_mask_v(b);
+        }
+
+        if constexpr (std::is_same_v<HandleT, EdgeHandle>) {
+            assert(b < m_s_owned_mask_e.size());
+            return m_s_owned_mask_e(b);
+        }
+
+        if constexpr (std::is_same_v<HandleT, FaceHandle>) {
+            assert(b < m_s_owned_mask_f.size());
+            return m_s_owned_mask_f(b);
+        }
+    }
+
+
+    /**
+     * @brief check if an element active from information stored in shared
+     * memory based on template parameter
+     */
+    template <typename HandleT>
+    __device__ __inline__ bool is_active(uint16_t b)
+    {
+        if constexpr (std::is_same_v<HandleT, VertexHandle>) {
+            assert(b < m_s_active_mask_v.size());
+            return m_s_active_mask_v(b);
+        }
+
+        if constexpr (std::is_same_v<HandleT, EdgeHandle>) {
+            assert(b < m_s_active_mask_e.size());
+            return m_s_active_mask_e(b);
+        }
+
+        if constexpr (std::is_same_v<HandleT, FaceHandle>) {
+            assert(b < m_s_active_mask_f.size());
+            return m_s_active_mask_f(b);
+        }
+    }
+
+
+    /**
+     * @brief check if an element is in cavity from information stored in shared
+     * memory based on template parameter
+     */
+    template <typename HandleT>
+    __device__ __inline__ bool is_in_cavity(uint16_t b)
+    {
+        if constexpr (std::is_same_v<HandleT, VertexHandle>) {
+            assert(b < m_s_in_cavity_v.size());
+            return m_s_in_cavity_v(b);
+        }
+
+        if constexpr (std::is_same_v<HandleT, EdgeHandle>) {
+            assert(b < m_s_in_cavity_e.size());
+            return m_s_in_cavity_e(b);
+        }
+
+        if constexpr (std::is_same_v<HandleT, FaceHandle>) {
+            assert(b < m_s_in_cavity_f.size());
+            return m_s_in_cavity_f(b);
+        }
+    }
+
+    /**
+     * @brief build patch stash mapper that maps q's patch stash index to p's
+     * patch stash index
+     */
+    __device__ __inline__ void build_patch_stash_mapper(
+        cooperative_groups::thread_block& block,
+        const PatchInfo&                  q_patch_info);
+
+    /**
+     * @brief verify that what we read in shared memory is consistent with
+     * global memory
+     */
+    __device__ __inline__ void verify_reading_from_global_memory(
+        cooperative_groups::thread_block& block) const;
+
 
     // indicate if this block can write its updates to global memory during
     // epilogue
@@ -767,7 +924,7 @@ struct CavityManager
 
     // the prefix sum of the cavities sizes. the size of the cavity is the
     // number of boundary edges in the cavity
-    // this also could have be uint16_t but we use itn since we do atomicAdd on
+    // this also could have be uint16_t but we use it since we do atomicAdd on
     // it
     int* m_s_cavity_size_prefix;
 
@@ -845,8 +1002,6 @@ struct CavityManager
     // if cavities that share an edge are allowed
     bool m_allow_touching_cavities;
 
-    bool* m_s_readd_to_queue;
-
     // mesh connectivity
     uint16_t *m_s_ev, *m_s_fe;
 
@@ -859,9 +1014,9 @@ struct CavityManager
     LPPair *m_s_table_stash_v, *m_s_table_stash_e, *m_s_table_stash_f;
 
     // store the number of elements. we use pointers since the number of mesh
-    // elements could change
-    // while they should be represented using uint16_t, we use uint32_t since we
-    // need to use atomicMax which is only supported 32 and 64 bit
+    // elements could change while they should be represented using uint16_t, we
+    // use uint32_t since we need to use atomicMax which is only supported 32
+    // and 64 bit
     uint32_t *m_s_num_vertices, *m_s_num_edges, *m_s_num_faces;
 
     // store the boundary edges of all cavities in compact format (similar to
@@ -870,6 +1025,17 @@ struct CavityManager
 
     // patch stash stored in shared memory
     PatchStash m_s_patch_stash;
+
+    // patch stash for new patches added to the patch during migration
+    PatchStash m_s_new_patch_stash;
+
+    // to indicate if a new patch has been added to the stash
+    bool* m_s_new_patch_added;
+
+    // indexed by q's patch stash id and returns the corresponding p's patch
+    // stash id. if the patch corresponds to p itself, we stores INVALID8-1
+    // if the patch does not exits in p's patch stash, we store INVALID8
+    uint8_t* m_s_patch_stash_mapper;
 
     PatchInfo m_patch_info;
     Context   m_context;

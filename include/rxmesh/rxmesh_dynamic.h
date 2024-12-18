@@ -12,64 +12,62 @@ namespace rxmesh {
 namespace detail {
 
 template <uint32_t blockThreads>
-__inline__ __device__ void bi_assignment(
-    cooperative_groups::thread_block& block,
-    const uint16_t                    num_vertices,
-    const uint16_t                    num_edges,
-    const uint16_t                    num_faces,
-    const Bitmask&                    s_owned_v,
-    const Bitmask&                    s_owned_e,
-    const Bitmask&                    s_owned_f,
-    const Bitmask&                    s_active_v,
-    const Bitmask&                    s_active_e,
-    const Bitmask&                    s_active_f,
-    const uint16_t*                   s_ev,
-    const uint16_t*                   s_fv,
-    Bitmask&                          s_new_p_owned_v,
-    Bitmask&                          s_new_p_owned_e,
-    Bitmask&                          s_new_p_owned_f);
+__device__ void bi_assignment(cooperative_groups::thread_block& block,
+                              const uint16_t                    num_vertices,
+                              const uint16_t                    num_edges,
+                              const uint16_t                    num_faces,
+                              const Bitmask&                    s_owned_v,
+                              const Bitmask&                    s_owned_e,
+                              const Bitmask&                    s_owned_f,
+                              const Bitmask&                    s_active_v,
+                              const Bitmask&                    s_active_e,
+                              const Bitmask&                    s_active_f,
+                              const uint16_t*                   s_ev,
+                              const uint16_t*                   s_fv,
+                              Bitmask&                          s_new_p_owned_v,
+                              Bitmask&                          s_new_p_owned_e,
+                              Bitmask& s_new_p_owned_f);
 
 
 template <uint32_t blockThreads>
-__inline__ __device__ void bi_assignment_ggp(
-    cooperative_groups::thread_block& block,
-    const uint16_t                    num_vertices,
-    const Bitmask&                    s_owned_v,
-    const bool                        ignore_owned_v,
-    const Bitmask&                    s_active_v,
-    const uint16_t*                   m_s_vv_offset,
-    const uint16_t*                   m_s_vv,
-    Bitmask&                          s_assigned_v,
-    Bitmask&                          s_current_frontier_v,
-    Bitmask&                          s_next_frontier_v,
-    Bitmask&                          s_partition_a_v,
-    Bitmask&                          s_partition_b_v,
-    int                               num_iter);
+__device__ void bi_assignment_ggp(cooperative_groups::thread_block& block,
+                                  const uint16_t  num_vertices,
+                                  const Bitmask&  s_owned_v,
+                                  const bool      ignore_owned_v,
+                                  const Bitmask&  s_active_v,
+                                  const uint16_t* m_s_vv_offset,
+                                  const uint16_t* m_s_vv,
+                                  Bitmask&        s_assigned_v,
+                                  Bitmask&        s_current_frontier_v,
+                                  Bitmask&        s_next_frontier_v,
+                                  Bitmask&        s_partition_a_v,
+                                  Bitmask&        s_partition_b_v,
+                                  int             num_iter);
 
 template <uint32_t blockThreads>
-__inline__ __device__ void slice(Context&                          context,
-                                 cooperative_groups::thread_block& block,
-                                 PatchInfo&                        pi,
-                                 const uint32_t                    new_patch_id,
-                                 const uint16_t                    num_vertices,
-                                 const uint16_t                    num_edges,
-                                 const uint16_t                    num_faces,
-                                 PatchStash& s_new_patch_stash,
-                                 // PatchStash&     s_original_patch_stash,
-                                 Bitmask&        s_owned_v,
-                                 Bitmask&        s_owned_e,
-                                 Bitmask&        s_owned_f,
-                                 const Bitmask&  s_active_v,
-                                 const Bitmask&  s_active_e,
-                                 const Bitmask&  s_active_f,
-                                 const uint16_t* s_ev,
-                                 const uint16_t* s_fe,
-                                 Bitmask&        s_new_p_active_v,
-                                 Bitmask&        s_new_p_active_e,
-                                 Bitmask&        s_new_p_active_f,
-                                 Bitmask&        s_new_p_owned_v,
-                                 Bitmask&        s_new_p_owned_e,
-                                 Bitmask&        s_new_p_owned_f);
+__device__ void slice(Context&                          context,
+                      cooperative_groups::thread_block& block,
+                      PatchInfo&                        pi,
+                      const uint32_t                    new_patch_id,
+                      const uint16_t                    num_vertices,
+                      const uint16_t                    num_edges,
+                      const uint16_t                    num_faces,
+                      PatchStash&                       s_new_patch_stash,
+                      // PatchStash&     s_original_patch_stash,
+                      Bitmask&        s_owned_v,
+                      Bitmask&        s_owned_e,
+                      Bitmask&        s_owned_f,
+                      const Bitmask&  s_active_v,
+                      const Bitmask&  s_active_e,
+                      const Bitmask&  s_active_f,
+                      const uint16_t* s_ev,
+                      const uint16_t* s_fe,
+                      Bitmask&        s_new_p_active_v,
+                      Bitmask&        s_new_p_active_e,
+                      Bitmask&        s_new_p_active_f,
+                      Bitmask&        s_new_p_owned_v,
+                      Bitmask&        s_new_p_owned_e,
+                      Bitmask&        s_new_p_owned_f);
 
 template <uint32_t blockThreads, typename AttributeT>
 __inline__ __device__ void post_slicing_update_attributes(
@@ -266,8 +264,7 @@ __global__ static void slice_patches(Context        context,
 
             for (uint16_t e = start; e < end; ++e) {
                 uint16_t edge = s_vv[e];
-                uint16_t v0   = pi.ev[2 * edge].id;
-                uint16_t v1   = pi.ev[2 * edge + 1].id;
+                auto [v0, v1] = pi.get_edge_vertices(edge);
                 assert(v0 != INVALID16 && v1 != INVALID16);
                 assert(v0 == v || v1 == v);
                 s_vv[e] = (v0 == v) * v1 + (v1 == v) * v0;
@@ -726,6 +723,7 @@ class RXMeshDynamic : public RXMeshStatic
         check_shared_memory(launch_box.smem_bytes_dyn,
                             launch_box.smem_bytes_static,
                             launch_box.num_registers_per_thread,
+                            launch_box.local_mem_per_thread,
                             blockThreads,
                             kernel);
     }
@@ -883,6 +881,7 @@ class RXMeshDynamic : public RXMeshStatic
         check_shared_memory(launch_box.smem_bytes_dyn,
                             launch_box.smem_bytes_static,
                             launch_box.num_registers_per_thread,
+                            launch_box.local_mem_per_thread,
                             blockThreads,
                             kernel,
                             false);
@@ -1018,12 +1017,14 @@ class RXMeshDynamic : public RXMeshStatic
         auto check = [&](int add_item) {
             size_t   smem_bytes_static;
             uint32_t num_reg_per_thread;
+            size_t   local_mem_per_thread;
 
             if (add_item == 0) {
                 check_shared_memory(
                     dyn_shmem,
                     smem_bytes_static,
                     num_reg_per_thread,
+                    local_mem_per_thread,
                     block_size,
                     (void*)detail::slice_patches<block_size,
                                                  TRANSPOSE_ITEM_PER_THREAD + 0>,
@@ -1033,6 +1034,7 @@ class RXMeshDynamic : public RXMeshStatic
                     dyn_shmem,
                     smem_bytes_static,
                     num_reg_per_thread,
+                    local_mem_per_thread,
                     block_size,
                     (void*)detail::slice_patches<block_size,
                                                  TRANSPOSE_ITEM_PER_THREAD + 1>,
@@ -1042,6 +1044,7 @@ class RXMeshDynamic : public RXMeshStatic
                     dyn_shmem,
                     smem_bytes_static,
                     num_reg_per_thread,
+                    local_mem_per_thread,
                     block_size,
                     (void*)detail::slice_patches<block_size,
                                                  TRANSPOSE_ITEM_PER_THREAD + 2>,
@@ -1051,6 +1054,7 @@ class RXMeshDynamic : public RXMeshStatic
                     dyn_shmem,
                     smem_bytes_static,
                     num_reg_per_thread,
+                    local_mem_per_thread,
                     block_size,
                     (void*)detail::slice_patches<block_size,
                                                  TRANSPOSE_ITEM_PER_THREAD + 3>,
@@ -1060,6 +1064,7 @@ class RXMeshDynamic : public RXMeshStatic
                     dyn_shmem,
                     smem_bytes_static,
                     num_reg_per_thread,
+                    local_mem_per_thread,
                     block_size,
                     (void*)detail::slice_patches<block_size,
                                                  TRANSPOSE_ITEM_PER_THREAD + 4>,
@@ -1069,6 +1074,7 @@ class RXMeshDynamic : public RXMeshStatic
                     dyn_shmem,
                     smem_bytes_static,
                     num_reg_per_thread,
+                    local_mem_per_thread,
                     block_size,
                     (void*)detail::slice_patches<block_size,
                                                  TRANSPOSE_ITEM_PER_THREAD + 5>,

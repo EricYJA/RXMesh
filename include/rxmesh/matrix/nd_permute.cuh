@@ -222,10 +222,10 @@ void heavy_max_matching(const RXMeshStatic&      rx,
     }
     if (v_weight_sum != rx.get_num_vertices()) {
         RXMESH_ERROR(
-            "Unexpected behavior in heavy_max_matching as the sum of the
-            " " patch graph's vertex weight ({}) does not match the number of
-            " " vertices in the mesh({})
-                .", v_weight_sum,
+            "Unexpected behavior in heavy_max_matching as the sum of the patch "
+            "graph's vertex weight ({}) does not match the number of vertices "
+            "in the mesh({}).",
+            v_weight_sum,
             rx.get_num_vertices());
     }
 
@@ -343,7 +343,7 @@ void heavy_max_matching(const RXMeshStatic&      rx,
 #endif
 
 
-    for (int i = 0; i < l.nodes.size(); ++i) {
+    for (size_t i = 0; i < l.nodes.size(); ++i) {
         const auto& node = l.nodes[i];
         // the neighbors to this node is the union of neighbors of node.lch and
         // node.rch. We don't store node.lcu/node.rch, but instead we store
@@ -2302,12 +2302,12 @@ __global__ static void extract_separators(const Context        context,
 
 }  // namespace detail
 
-void create_dfs_indexing(const int                level,
-                         const int                node,
-                         int&                     current_id,
-                         const MaxMatchTree<int>& max_match_tree,
-                         std::vector<bool>&       visited,
-                         std::vector<int>&        dfs_index)
+inline void create_dfs_indexing(const int                level,
+                                const int                node,
+                                int&                     current_id,
+                                const MaxMatchTree<int>& max_match_tree,
+                                std::vector<bool>&       visited,
+                                std::vector<int>&        dfs_index)
 {
     const int S     = max_match_tree.levels.size() - level - 1;
     const int shift = (1 << S) - 1;
@@ -2349,8 +2349,8 @@ void create_dfs_indexing(const int                level,
     }
 }
 
-void single_patch_nd_permute(RXMeshStatic&              rx,
-                             VertexAttribute<uint16_t>& v_local_permute)
+inline void single_patch_nd_permute(RXMeshStatic&              rx,
+                                    VertexAttribute<uint16_t>& v_local_permute)
 {
 
     constexpr uint32_t blockThreads = 256;
@@ -2451,13 +2451,13 @@ void single_patch_nd_permute(RXMeshStatic&              rx,
 #endif
 }
 
-void permute_separators(RXMeshStatic&              rx,
-                        VertexAttribute<int>&      v_index,
-                        VertexAttribute<uint16_t>& v_local_permute,
-                        MaxMatchTree<int>&         max_match_tree,
-                        int*                       d_permute,
-                        int*                       d_patch_proj_l,
-                        int*                       d_patch_proj_l1)
+inline void permute_separators(RXMeshStatic&              rx,
+                               VertexAttribute<int>&      v_index,
+                               VertexAttribute<uint16_t>& v_local_permute,
+                               MaxMatchTree<int>&         max_match_tree,
+                               int*                       d_permute,
+                               int*                       d_patch_proj_l,
+                               int*                       d_patch_proj_l1)
 {
 
 
@@ -2648,7 +2648,7 @@ void permute_separators(RXMeshStatic&              rx,
     GPU_FREE(d_count);
 }
 
-void nd_permute(RXMeshStatic& rx, int* h_permute)
+inline void nd_permute(RXMeshStatic& rx, int* h_permute)
 {
 
     auto v_index = *rx.add_vertex_attribute<int>("index", 1);
