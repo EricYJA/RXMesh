@@ -12,7 +12,7 @@
 #include "rxmesh/matrix/permute_util.h"
 
 // if we should calc and use vertex weight in max match
-// #define USE_V_WEIGHTS
+#define USE_V_WEIGHTS
 
 namespace rxmesh {
 
@@ -1156,9 +1156,9 @@ void GGGP(const RXMeshStatic&      rx,
 
             node.lch = (i << 1);
 
-            assert(std::find(node_partition_mapping.begin(),
-                             node_partition_mapping.end(),
-                             i + 1) != node_partition_mapping.end());
+            // assert(std::find(node_partition_mapping.begin(),
+            //                  node_partition_mapping.end(),
+            //                  i + 1) != node_partition_mapping.end());
             // partition found
             node.rch = (i << 1) + 1;
 
@@ -1374,7 +1374,7 @@ void GGGP_vweight(const RXMeshStatic&      rx,
                 /* global_partition_id_vec */ node_partition_mapping,
                 /* id */ i,
                 /* local_partition_id_vec */ local_node_partition_mapping,
-                /* max_passes */ 10);
+                /* max_passes */ 50);
         }
 
         RXMESH_INFO("MAIN - node_partition_mapping:");
@@ -2730,7 +2730,7 @@ inline void nd_permute(RXMeshStatic& rx, int* h_permute)
     // GGGP(rx, p_graph, max_match_tree);
 
     // test the GGGP with vweight but not vertex count
-    // GGGP_vweight(rx, p_graph, max_match_tree);
+    GGGP_vweight(rx, p_graph, max_match_tree);
 
     // RXMESH_INFO("Max Match Tree");
     // max_match_tree.print();
@@ -2742,7 +2742,7 @@ inline void nd_permute(RXMeshStatic& rx, int* h_permute)
     // heavy_max_matching_with_partition(rx, p_graph, max_match_tree);
 
     RXMESH_INFO("min_degree_reordering");
-    min_degree_reordering(rx, p_graph, max_match_tree);
+    // min_degree_reordering(rx, p_graph, max_match_tree);
 
     permute_separators(rx,
                        v_index,

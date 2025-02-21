@@ -9,6 +9,8 @@
 #include "rxmesh/matrix/permute_util.h"
 #include "rxmesh/matrix/sparse_matrix.cuh"
 
+#include "rxmesh/geometry_factory.h"
+
 #include "count_nnz_fillin.h"
 
 #include "render_permutation.h"
@@ -270,10 +272,21 @@ TEST(Apps, NDReorder)
 
     cuda_query(Arg.device_id);
 
+
+    std::vector<std::vector<float>> verts;
+    std::vector<std::vector<uint32_t>> fv;
+    uint32_t nx = 50;
+    uint32_t ny = 50;
+    create_plane(verts, fv, nx, ny);
+    RXMeshStatic rx(fv);
+    rx.add_vertex_coordinates(verts, "plane");
+
+
     // const std::string p_file = STRINGIFY(OUTPUT_DIR) +
     //                            extract_file_name(Arg.obj_file_name) +
     //                            "_patches";
-    RXMeshStatic rx(Arg.obj_file_name);
+
+    // RXMeshStatic rx(Arg.obj_file_name);
     // if (!std::filesystem::exists(p_file)) {
     //     rx.save(p_file);
     // }
