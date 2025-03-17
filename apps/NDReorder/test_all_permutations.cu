@@ -273,12 +273,19 @@ TEST(Apps, NDReorder)
     cuda_query(Arg.device_id);
 
 
+    int n = 200;
+
     std::vector<std::vector<float>> verts;
     std::vector<std::vector<uint32_t>> fv;
-    uint32_t nx = 50;
-    uint32_t ny = 50;
-    create_plane(verts, fv, nx, ny);
-    RXMeshStatic rx(fv);
+
+    const vec3<float> lower_corner(-3.0, 0.0, -3.0);
+
+    float spacing = 6.f / float(n);
+
+    create_plane(verts, fv, n, n, 1, spacing, lower_corner);
+
+    RXMeshStatic rx(fv); //RXMeshStatic rx("file.obj");
+
     rx.add_vertex_coordinates(verts, "plane");
 
 
@@ -305,8 +312,8 @@ TEST(Apps, NDReorder)
 
     RXMESH_INFO(" Input Matrix NNZ = {}", rx_mat.non_zeros());
 
-    rx.render_face_patch();
-    rx.render_vertex_patch();
+    // rx.render_face_patch();
+    // rx.render_vertex_patch();
 
     // convert matrix to Eigen
     auto eigen_mat = rx_mat.to_eigen();
@@ -315,9 +322,9 @@ TEST(Apps, NDReorder)
 
     no_permute(rx, eigen_mat);
 
-    with_amd(rx, rx_mat, eigen_mat);
+    // with_amd(rx, rx_mat, eigen_mat);
 
-    with_symrcm(rx, rx_mat, eigen_mat);
+    // with_symrcm(rx, rx_mat, eigen_mat);
 
     with_metis(rx, rx_mat, eigen_mat);
 
@@ -325,7 +332,7 @@ TEST(Apps, NDReorder)
 
     with_gpu_nd(rx, eigen_mat);
 
-    polyscope::show();
+    // polyscope::show();
 }
 
 int main(int argc, char** argv)

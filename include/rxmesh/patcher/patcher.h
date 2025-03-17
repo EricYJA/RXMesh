@@ -43,6 +43,18 @@ class Patcher
             const uint32_t num_edges,
             bool           use_metis);
 
+    /* VV_Patcher - for testing initial partitioning with VV */
+    Patcher(uint32_t                                  patch_size,
+            const std::vector<uint32_t>&              ff_offset,
+            const std::vector<uint32_t>&              ff_values,
+            const std::vector<std::vector<uint32_t>>& fv,
+            const std::vector<std::vector<uint32_t>>& ev,
+            const std::unordered_map<std::pair<uint32_t, uint32_t>,
+                                     uint32_t,
+                                     ::rxmesh::detail::edge_key_hash> edges_map,
+            const uint32_t num_vertices,
+            const uint32_t num_edges);
+
     Patcher(std::string filename);
 
     ~Patcher();
@@ -218,10 +230,13 @@ class Patcher
 
 
     /**
-     * @brief form initial face assigement, compute the compressed storage of 
+     * @brief form initial face assigement, compute the compressed storage of
      * the patches (i.e., populate m_patches_val and m_patches_offset)
      */
     void compute_inital_compressed_patches();
+
+    /* VV_Patcher - for testing initial partitioning with VV */
+    void compute_inital_compressed_patches_vv();
 
     void assign_patch(
         const std::vector<std::vector<uint32_t>>&                 fv,
@@ -278,9 +293,22 @@ class Patcher
     void metis_kway(const std::vector<uint32_t>& ff_offset,
                     const std::vector<uint32_t>& ff_values);
 
+    /* VV_Patcher - for testing initial partitioning with VV */
+    void metis_kway_vv(const std::vector<std::vector<uint32_t>>& fv,
+                       const std::vector<std::vector<uint32_t>>& ev, 
+                       const std::vector<uint32_t>&              vv_offset,
+                       const std::vector<uint32_t>&              vv_values);
+
     void calc_edge_cut(const std::vector<std::vector<uint32_t>>& fv,
                        const std::vector<uint32_t>&              ff_offset,
                        const std::vector<uint32_t>&              ff_values);
+
+    /* VV_Patcher - for testing initial partitioning with VV */
+    void build_supporting_structures_vv(
+        const std::vector<std::vector<uint32_t>>& fv,
+        const std::vector<std::vector<uint32_t>>& ev,
+        std::vector<uint32_t>&                    vv_offset,
+        std::vector<uint32_t>&                    vv_values);
 
     uint32_t m_patch_size, m_num_patches, m_num_vertices, m_num_edges,
         m_num_faces, m_num_seeds, m_max_num_patches, m_num_components,

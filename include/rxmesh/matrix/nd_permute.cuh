@@ -2547,8 +2547,8 @@ inline void permute_separators(RXMeshStatic&              rx,
             int proj     = max_match_tree.levels[l].patch_proj[vh.patch_id()];
             v_render(vh) = proj;
         });
-        rx.get_polyscope_mesh()->addVertexScalarQuantity(
-            "Match " + std::to_string(l), v_render);
+        // rx.get_polyscope_mesh()->addVertexScalarQuantity(
+        //     "Match " + std::to_string(l), v_render);
     }
 
     int sum_edge_cut = 0;

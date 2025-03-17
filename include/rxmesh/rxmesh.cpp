@@ -271,33 +271,46 @@ void RXMesh::build(const std::vector<std::vector<uint32_t>>& fv,
 
     build_supporting_structures(fv, ev, ef, ff_offset, ff_values);
 
-    if (!patcher_file.empty()) {
-        if (!std::filesystem::exists(patcher_file)) {
-            RXMESH_ERROR(
-                "RXMesh::build patch file {} does not exit. Building unique "
-                "patches.",
-                patcher_file);
-            m_patcher = std::make_unique<patcher::Patcher>(m_patch_size,
-                                                           ff_offset,
-                                                           ff_values,
-                                                           fv,
-                                                           m_edges_map,
-                                                           m_num_vertices,
-                                                           m_num_edges,
-                                                           false);
-        } else {
-            m_patcher = std::make_unique<patcher::Patcher>(patcher_file);
-        }
-    } else {
-        m_patcher = std::make_unique<patcher::Patcher>(m_patch_size,
-                                                       ff_offset,
-                                                       ff_values,
-                                                       fv,
-                                                       m_edges_map,
-                                                       m_num_vertices,
-                                                       m_num_edges,
-                                                       false);
-    }
+    /* VV_Patcher - Use this constructor for testing initial partitioning with
+     * VV */
+    m_patcher = std::make_unique<patcher::Patcher>(m_patch_size,
+                                                    ff_offset,
+                                                    ff_values,
+                                                    fv,
+                                                    ev,
+                                                    m_edges_map,
+                                                    m_num_vertices,
+                                                    m_num_edges);
+
+    /* The original code for patcher construction */
+    // // Patcher file loading
+    // if (!patcher_file.empty()) {
+    //     if (!std::filesystem::exists(patcher_file)) {
+    //         RXMESH_ERROR(
+    //             "RXMesh::build patch file {} does not exit. Building unique "
+    //             "patches.",
+    //             patcher_file);
+    //         m_patcher = std::make_unique<patcher::Patcher>(m_patch_size,
+    //                                                        ff_offset,
+    //                                                        ff_values,
+    //                                                        fv,
+    //                                                        m_edges_map,
+    //                                                        m_num_vertices,
+    //                                                        m_num_edges,
+    //                                                        false);
+    //     } else {
+    //         m_patcher = std::make_unique<patcher::Patcher>(patcher_file);
+    //     }
+    // } else {
+    //     m_patcher = std::make_unique<patcher::Patcher>(m_patch_size,
+    //                                                    ff_offset,
+    //                                                    ff_values,
+    //                                                    fv,
+    //                                                    m_edges_map,
+    //                                                    m_num_vertices,
+    //                                                    m_num_edges,
+    //                                                    false);
+    // }
 
 
     m_num_patches     = m_patcher->get_num_patches();

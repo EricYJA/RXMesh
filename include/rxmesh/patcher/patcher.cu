@@ -53,6 +53,8 @@ Patcher::Patcher(uint32_t                                        patch_size,
       m_patching_time_ms(0.0)
 
 {
+    // TODO for test use only, forcing use_metis to true
+    use_metis = true;
 
     m_num_patches =
         m_num_faces / m_patch_size + ((m_num_faces % m_patch_size) ? 1 : 0);
@@ -158,6 +160,148 @@ Patcher::Patcher(uint32_t                                        patch_size,
         assign_patch(fv, edges_map);
     }
 
+
+    calc_edge_cut(fv, ff_offset, ff_values);
+
+    print_statistics();
+
+    GPU_FREE(d_face_patch);
+    GPU_FREE(d_queue);
+    GPU_FREE(d_queue_ptr);
+    GPU_FREE(d_ff_values);
+    GPU_FREE(d_ff_offset);
+    GPU_FREE(d_cub_temp_storage_scan);
+    GPU_FREE(d_cub_temp_storage_max);
+    GPU_FREE(d_seeds);
+    GPU_FREE(d_new_num_patches);
+    GPU_FREE(d_max_patch_size);
+    GPU_FREE(d_patches_offset);
+    GPU_FREE(d_patches_size);
+    GPU_FREE(d_patches_val);
+}
+
+/* VV_Patcher - THis is the Patcher constructor for VV based initia partition*/
+Patcher::Patcher(uint32_t                                        patch_size,
+                 const std::vector<uint32_t>&                    ff_offset,
+                 const std::vector<uint32_t>&                    ff_values,
+                 const std::vector<std::vector<uint32_t>>&       fv,
+                 const std::vector<std::vector<uint32_t>>&       ev,
+                 const std::unordered_map<std::pair<uint32_t, uint32_t>,
+                                          uint32_t,
+                                          detail::edge_key_hash> edges_map,
+                 const uint32_t                                  num_vertices,
+                 const uint32_t                                  num_edges)
+    : m_patch_size(patch_size),
+      m_num_patches(0),
+      m_num_vertices(num_vertices),
+      m_num_edges(num_edges),
+      m_num_faces(fv.size()),
+      m_num_seeds(0),
+      m_max_num_patches(0),
+      m_num_components(0),
+      m_num_lloyd_run(0),
+      m_patching_time_ms(0.0)
+
+{
+    RXMESH_INFO("========== Patcher: Using VV mode ==========");
+
+    std::vector<uint32_t> vv_offset;
+    std::vector<uint32_t> vv_values;
+
+    // build VV compressed adjacency list
+    build_supporting_structures_vv(fv, ev, vv_offset, vv_values);
+
+    m_num_patches = m_num_faces / m_patch_size +
+                    ((m_num_faces % m_patch_size) ? 1 : 0);
+
+    m_max_num_patches = 5 * m_num_patches;
+
+    m_num_seeds = m_num_patches;
+    std::vector<uint32_t> seeds;
+
+    uint32_t* d_face_patch            = nullptr;
+    uint32_t* d_queue                 = nullptr;
+    uint32_t* d_queue_ptr             = nullptr;
+    uint32_t* d_ff_values             = nullptr;
+    uint32_t* d_ff_offset             = nullptr;
+    void*     d_cub_temp_storage_scan = nullptr;
+    void*     d_cub_temp_storage_max  = nullptr;
+    size_t    cub_scan_bytes          = 0;
+    size_t    cub_max_bytes           = 0;
+    uint32_t* d_seeds                 = nullptr;
+    uint32_t* d_new_num_patches       = nullptr;
+    uint32_t* d_max_patch_size        = nullptr;
+    uint32_t* d_patches_offset        = nullptr;
+    uint32_t* d_patches_size          = nullptr;
+    uint32_t* d_patches_val           = nullptr;
+
+
+    allocate_memory(seeds);
+
+    // degenerate cases
+    if (m_num_patches <= 1) {
+        RXMESH_ERROR(
+            "Patcher: Not implemented under VV mode. Current Implementation "
+            "not verified");
+
+        m_patches_offset[0] = m_num_vertices;
+        m_num_seeds         = 1;
+        m_num_components    = 1;
+        m_num_lloyd_run     = 0;
+        for (uint32_t i = 0; i < m_num_vertices; ++i) {
+            m_face_patch[i]  = 0;
+            m_patches_val[i] = i;
+        }
+        allocate_device_memory(seeds,
+                               ff_offset,
+                               ff_values,
+                               d_face_patch,
+                               d_queue,
+                               d_queue_ptr,
+                               d_ff_values,
+                               d_ff_offset,
+                               d_cub_temp_storage_scan,
+                               d_cub_temp_storage_max,
+                               cub_scan_bytes,
+                               cub_max_bytes,
+                               d_seeds,
+                               d_new_num_patches,
+                               d_max_patch_size,
+                               d_patches_offset,
+                               d_patches_size,
+                               d_patches_val);
+        assign_patch(fv, edges_map);
+    } else {
+        // Only METIS is supported 
+        metis_kway_vv(fv, ev, vv_offset, vv_values);
+
+        // check ff adjacency: no face should be isolated from its own patch
+        for (uint32_t f = 0; f < m_num_faces; ++f) {
+            uint32_t f_patch = m_face_patch[f];
+            // RXMESH_INFO("Patcher: Checking face {} Patch {}", f, f_patch);
+
+            bool is_isolated = true;
+            for (uint32_t i = ff_offset[f]; i < ff_offset[f + 1]; ++i) {
+                uint32_t adj_f = ff_values[i];
+                uint32_t adj_f_patch = m_face_patch[adj_f];
+
+                if (f_patch == adj_f_patch) {
+                    is_isolated = false;
+                    break;
+                }
+            }
+
+            if (is_isolated) {
+                RXMESH_ERROR(
+                    "Patcher: Face {} is isolated from its own patch", f);
+            }
+        }
+
+        extract_ribbons(fv, ff_offset, ff_values);
+        
+        // no need to assign patch as the metis_kway_vv already did that
+        // assign_patch(fv, edges_map);
+    }
 
     calc_edge_cut(fv, ff_offset, ff_values);
 
@@ -1158,6 +1302,114 @@ void Patcher::metis_kway(const std::vector<uint32_t>& ff_offset,
     compute_inital_compressed_patches();
 }
 
+/* VV_Patcher - partition on VV adjacency and then assign vertices/faces/edges to patches */
+void Patcher::metis_kway_vv(const std::vector<std::vector<uint32_t>>& fv,
+                            const std::vector<std::vector<uint32_t>>& ev,
+                            const std::vector<uint32_t>&              vv_offset,
+                            const std::vector<uint32_t>&              vv_values)
+{
+
+    std::vector<idx_t> xadj(vv_offset.size());
+    std::vector<idx_t> adjncy(vv_values.size());
+
+    for (uint32_t i = 0; i < vv_offset.size(); ++i) {
+        xadj[i] = vv_offset[i];
+    }
+
+    for (uint32_t i = 0; i < vv_values.size(); ++i) {
+        adjncy[i] = vv_values[i];
+    }
+
+    idx_t options[METIS_NOPTIONS];
+    METIS_SetDefaultOptions(options);
+    options[METIS_OPTION_PTYPE] = METIS_PTYPE_KWAY;
+    options[METIS_OPTION_OBJTYPE] =
+        METIS_OBJTYPE_VOL;  // Total communication volume minimization.
+    options[METIS_OPTION_NUMBERING] = 0;
+    options[METIS_OPTION_CONTIG]    = 0;
+    options[METIS_OPTION_COMPRESS]  = 0;
+    options[METIS_OPTION_DBGLVL]    = METIS_DBG_TIME;
+
+    // number of vertices in the graph
+    idx_t              nvtxs  = m_num_vertices;
+    idx_t              ncon   = 1;
+    idx_t*             vwgt   = NULL;
+    idx_t*             vsize  = NULL;
+    idx_t*             adjwgt = NULL;
+    idx_t              nparts = DIVIDE_UP(m_num_faces, m_patch_size);
+    real_t*            tpwgts = NULL;
+    real_t*            ubvec  = NULL;
+    idx_t              objval = 0;
+    std::vector<idx_t> part(nvtxs, 0);
+
+    CPUTimer timer;
+    timer.start();
+
+    int metis_status = METIS_PartGraphKway(&nvtxs,
+                                           &ncon,
+                                           xadj.data(),
+                                           adjncy.data(),
+                                           vwgt,
+                                           vsize,
+                                           adjwgt,
+                                           &nparts,
+                                           tpwgts,
+                                           ubvec,
+                                           options,
+                                           &objval,
+                                           part.data());
+    timer.stop();
+    m_patching_time_ms = timer.elapsed_millis();
+
+    if (metis_status == METIS_ERROR_INPUT) {
+        RXMESH_ERROR("METIS ERROR INPUT");
+        exit(EXIT_FAILURE);
+    } else if (metis_status == METIS_ERROR_MEMORY) {
+        RXMESH_ERROR("\n METIS ERROR MEMORY \n");
+        exit(EXIT_FAILURE);
+    } else if (metis_status == METIS_ERROR) {
+        RXMESH_ERROR("\n METIS ERROR\n");
+        exit(EXIT_FAILURE);
+    }
+
+    m_num_patches = nparts;
+
+    /* assign vertex patch */
+    for (uint32_t v = 0; v < m_num_vertices; ++v) {
+        m_vertex_patch[v] = part[v];
+    }
+
+    /* assign face patch */
+    for (uint32_t f = 0; f < m_num_faces; ++f) {
+        uint32_t f_patch = part[fv[f][0]];
+
+        for (uint32_t i = 0; i < 3; ++i) {
+            uint32_t v = fv[f][i];
+
+            if (part[v] < f_patch) {
+                f_patch = part[v];
+            }
+        }
+
+        m_face_patch[f] = f_patch;
+    }
+
+    /* assign edge patch */
+    for (uint32_t e = 0; e < m_num_edges; ++e) {
+        uint32_t v0 = ev[e][0];
+        uint32_t v1 = ev[e][1];
+
+        if (m_vertex_patch[v0] == m_vertex_patch[v1]) {
+            m_edge_patch[e] = m_vertex_patch[v0];
+        } else {
+            uint32_t e_patch = min(m_vertex_patch[v0], m_vertex_patch[v1]);
+            m_edge_patch[e] = e_patch;
+        }
+    }    
+
+    compute_inital_compressed_patches();
+}
+
 void Patcher::compute_inital_compressed_patches()
 {
     m_patches_offset.resize(m_num_patches, 0);
@@ -1166,6 +1418,13 @@ void Patcher::compute_inital_compressed_patches()
     for (uint32_t f = 0; f < m_num_faces; ++f) {
         patches_size[m_face_patch[f]]++;
     }
+
+    // /* check patch size*/
+    // std::string s = "Patch sizes: ";
+    // for (uint32_t i = 0; i < m_num_patches; ++i) {
+    //     s += std::to_string(patches_size[i]) + " ";
+    // }
+    // RXMESH_INFO(s);
 
     std::inclusive_scan(
         patches_size.begin(), patches_size.end(), m_patches_offset.begin());
@@ -1189,5 +1448,87 @@ void Patcher::compute_inital_compressed_patches()
         m_patches_val[id] = f;
     }
 }
+
+/* VV_Patcher (not used) -  This calculate the patches compressed array based on vertex count */
+void Patcher::compute_inital_compressed_patches_vv()
+{
+    m_patches_offset.resize(m_num_patches, 0);
+
+    std::vector<uint32_t> patches_size(m_num_patches, 0);
+    for (uint32_t v = 0; v < m_num_vertices; ++v) {
+        patches_size[m_vertex_patch[v]]++;
+    }
+
+    std::inclusive_scan(
+        patches_size.begin(), patches_size.end(), m_patches_offset.begin());
+
+    if (m_patches_offset.back() != m_num_vertices) {
+        RXMESH_ERROR(
+            "Patcher::compute_inital_compressed_patches()  Error with creating "
+            "patch graph");
+        exit(EXIT_FAILURE);
+    }
+
+    std::fill(patches_size.begin(), patches_size.end(), 0);
+
+    for (uint32_t v = 0; v < m_num_faces; ++v) {
+        int p = m_vertex_patch[v];
+
+        uint32_t id = (p == 0) ? 0 : m_patches_offset[p - 1];
+
+        id += patches_size[p]++;
+
+        m_patches_val[id] = v;
+    }
+}
+
+/* VV_Patcher - build the VV compressed structure for METIS_VV */
+void Patcher::build_supporting_structures_vv(
+    const std::vector<std::vector<uint32_t>>& fv,
+    const std::vector<std::vector<uint32_t>>& ev,
+    std::vector<uint32_t>&                    vv_offset,
+    std::vector<uint32_t>&                    vv_values)
+{
+    /* ---------- populate vv stuff ---------- */
+
+    std::vector<uint32_t> vv_size(
+        m_num_vertices, 0);  // the size array for calculating the offset
+
+    // Fill the vv_size array
+    for (uint32_t e = 0; e < m_num_edges; ++e) {
+        uint32_t v0 = ev[e][0];
+        uint32_t v1 = ev[e][1];
+
+        vv_size[v0]++;
+        vv_size[v1]++;
+    }
+
+    /* test to see the max VV size */
+    uint32_t max_vv_size = *std::max_element(vv_size.begin(), vv_size.end());
+    RXMESH_INFO("Max VV size: {}", max_vv_size);
+
+    vv_offset.resize(m_num_vertices + 1);
+    std::exclusive_scan(vv_size.begin(), vv_size.end(), vv_offset.begin(), 0);
+    vv_offset[m_num_vertices] =
+        vv_offset[m_num_vertices - 1] + vv_size[m_num_vertices - 1];
+    vv_values.clear();
+    vv_values.resize(vv_offset.back());
+    std::fill(vv_size.begin(), vv_size.end(), 0);
+
+    for (uint32_t e = 0; e < m_num_edges; ++e) {
+        uint32_t v0 = ev[e][0];
+        uint32_t v1 = ev[e][1];
+
+        uint32_t v0_offset = vv_size[v0]++;
+        uint32_t v1_offset = vv_size[v1]++;
+
+        v0_offset += vv_offset[v0];
+        v1_offset += vv_offset[v1];
+
+        vv_values[v0_offset] = v1;
+        vv_values[v1_offset] = v0;
+    }
+}
+
 }  // namespace patcher
 }  // namespace rxmesh
